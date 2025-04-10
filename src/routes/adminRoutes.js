@@ -12,7 +12,7 @@ import {
   resetPassword
 } from "../controllers/adminController.js";
 import { activateLicense } from "../controllers/licenseController.js";
-import { adminMiddleware } from "../middleware/authMiddleware.js";
+import { adminMiddleware, authMiddleware } from "../middleware/authMiddleware.js";
 import { upload } from "../middleware/upload.js";
 const router = express.Router();
 
@@ -30,7 +30,7 @@ router.post("/forgot-password", forgotPassword);
 router.post("/reset-password/:token", resetPassword);
 router.delete("/:adminId", delAdmin);
 router.post("/activate-license", adminMiddleware, activateLicense);
-router.get("/license-status", adminMiddleware, getLicenseStatus);
+router.get("/license-status", authMiddleware, getLicenseStatus);
 router.get("/totalCounts", adminCounts);
 router.get("/:companyId",getCompanyDetails);
 router.get("/visitor-url/:id", getVisitorRegisterURL);

@@ -1,7 +1,7 @@
 import jwt from "jsonwebtoken";
 import Admin from "../models/adminModel.js";
-import Security from "../models/userModel.js";
-import Employee from "../models/deptUserModel.js";
+import DeptUser from "../models/deptUserModel.js";
+import User from "../models/userModel.js";
 
 const adminMiddleware = (req, res, next) => {
   try {
@@ -19,13 +19,12 @@ const adminMiddleware = (req, res, next) => {
     }
 
     jwt.verify(token, process.env.JWT_SECRET, (err, decodedAdmin) => {
-      
       if (err) {
         return res.status(403).json({ message: "Invalid or expired token" });
       }
 
       req.admin = decodedAdmin;
-      
+
       next();
     });
   } catch (error) {
@@ -65,53 +64,53 @@ const superAdminMiddleware = (req, res, next) => {
   }
 };
 
-const checkTrialMiddleware = async (req, res, next) => {
+const authMiddleware = async (req, res, next) => {
   try {
-    const { userId, userType } = req.user; // Assuming authentication is done
+    const authHeader = req.headers.authorization;
 
-    let user;
-    if (userType === "admin") {
-      user = await Admin.findById(userId);
-    } else if (userType === "security") {
-      user = await Security.findById(userId);
-    } else if (userType === "dept_user") {
-      user = await Employee.findById(userId);
+    if (!authHeader) {
+      return res.status(401).json({ message: "Authorization token required" });
     }
 
-    if (!user) {
-      return res.status(404).json({ message: "User not found" });
+    const [scheme, token] = authHeader.split(" ");
+    if (scheme !== "Bearer" || !token) {
+      return res
+        .status(401)
+        .json({ message: "Invalid token format. Use 'Bearer <token>'" });
     }
 
-    // Check if trial period has expired
-    const currentDate = new Date();
-    if (currentDate > user.trialExpiryDate) {
-      user.isTrialActive = false;
-      await user.save();
-      return res.status(403).json({
-        message: "Trial period expired. Please subscribe to continue.",
-      });
+    const decoded = jwt.verify(token, process.env.JWT_SECRET);
+
+    // Check by decoded.id instead of _id
+    if (decoded.role === "admin") {
+      const admin = await Admin.findById(decoded.id);
+      if (admin) {
+        req.admin = admin;
+        return next();
+      }
     }
 
-    next(); // Continue if trial is active
+    if (decoded.role === "security") {
+      const security = await User.findById(decoded.id);
+      if (security) {
+        req.security = security;
+        return next();
+      }
+    }
+
+    if (decoded.role === "Dept_User") {
+      const deptUser = await DeptUser.findById(decoded.id);
+      if (deptUser) {
+        req.deptUser = deptUser;
+        return next();
+      }
+    }
+
+    return res.status(403).json({ message: "Unauthorized user" });
   } catch (error) {
-    res.status(500).json({ message: "Internal server error" });
+    console.error("Auth Middleware Error:", error.message);
+    return res.status(500).json({ message: "Internal server error" });
   }
 };
 
-const checkRoleMiddleware = (requiredRole) => {
-  return (req, res, next) => {
-    if (req.user.userType !== requiredRole) {
-      return res
-        .status(403)
-        .json({ message: "Access denied. You do not have permission." });
-    }
-    next();
-  };
-};
-
-export {
-  adminMiddleware,
-  superAdminMiddleware,
-  checkTrialMiddleware,
-  checkRoleMiddleware,
-};
+export { adminMiddleware, superAdminMiddleware, authMiddleware };

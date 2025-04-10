@@ -450,6 +450,32 @@ export const scanAndStoreFullRecord = async (req, res) => {
     if (!record) {
       return res.status(404).json({ message: "QR code not found." });
     }
+    // Monthly scan limit logic
+    const companyId = record.cid;
+    const startOfMonth = moment().startOf("month").toDate();
+    const endOfMonth = moment().endOf("month").toDate();
+    const db = mongoose.connection;
+    const scannedCollection = db.collection("scanned_data");
+
+    const monthlyScanCount = await scannedCollection.countDocuments({
+      "scannedData.cid": companyId,
+      entryTime: { $exists: true },
+      exitTime: { $exists: true },
+      scannedAt: { $gte: startOfMonth, $lte: endOfMonth },
+    });
+    console.log("MOnthly Countttt", monthlyScanCount);
+
+    const MAX_MONTHLY_SCANS = 1;
+
+    // ✅ Check if this is a new entry or an exit scan
+    const existingScan = await scannedCollection.findOne({ barcodeId });
+    const isExitScan = !!(existingScan && !existingScan.exitTime);
+
+    if (!isExitScan && monthlyScanCount >= MAX_MONTHLY_SCANS) {
+      return res.status(403).json({
+        message: "Monthly scan limit reached. Please upgrade your plan.",
+      });
+    }
 
     const validationResult = validateQRCode(record);
 
@@ -476,8 +502,8 @@ export const scanAndStoreFullRecord = async (req, res) => {
       }
     }
 
-    const db = mongoose.connection;
-    const scannedCollection = db.collection("scanned_data");
+    // const db = mongoose.connection;
+    // const scannedCollection = db.collection("scanned_data");
 
     const currentTime = new Date();
     const todayDate = moment().format("YYYY-MM-DD");
@@ -513,8 +539,6 @@ export const scanAndStoreFullRecord = async (req, res) => {
       }
     }
 
-    const existingScan = await scannedCollection.findOne({ barcodeId });
-
     if (existingScan) {
       if (existingScan.exitTime) {
         return res.status(400).json({
@@ -541,6 +565,7 @@ export const scanAndStoreFullRecord = async (req, res) => {
             scannedAt: currentTime,
             entryTime: currentTime,
             exitTime: null,
+            cid: companyId,
           },
         },
         { upsert: true }
@@ -757,9 +782,12 @@ export const reqRegCount = async (req, res) => {
     const totalFormsCount = await Form.countDocuments({ cid: companyId });
 
     // Get the current time in the local timezone
-    const currentTime = new Date(); 
+    const currentTime = new Date();
     const localCurrentHour = currentTime.getHours().toString().padStart(2, "0");
-    const localCurrentMinute = currentTime.getMinutes().toString().padStart(2, "0");
+    const localCurrentMinute = currentTime
+      .getMinutes()
+      .toString()
+      .padStart(2, "0");
 
     // Get the number of pending forms that have NOT expired
     const newRequestsCount = await Form.countDocuments({
@@ -770,8 +798,8 @@ export const reqRegCount = async (req, res) => {
           {
             $concat: [
               { $substrCP: ["$timeTo", 0, 2] }, // Extract hours
-              { $substrCP: ["$timeTo", 3, 2] }  // Extract minutes
-            ]
+              { $substrCP: ["$timeTo", 3, 2] }, // Extract minutes
+            ],
           },
           localCurrentHour + localCurrentMinute, // Compare in local time format "HHmm"
         ],
@@ -794,8 +822,6 @@ export const reqRegCount = async (req, res) => {
     });
   }
 };
-
-
 
 // Fetch Today visitors
 export const todayVisitedUsers = async (req, res) => {
@@ -1087,7 +1113,6 @@ export const searchScannedUser = async (req, res) => {
 
 //Total Entry & Exit Coount
 export const getTodayEntryExitCount = async (req, res) => {
-
   try {
     const { companyId } = req.query;
     if (!companyId) {

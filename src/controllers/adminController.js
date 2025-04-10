@@ -304,14 +304,19 @@ const resetPassword = async (req, res) => {
 //License status
 const getLicenseStatus = async (req, res) => {
   try {
-    const adminId = req.admin.id;
-    const admin = await Admin.findById(adminId);
+    const loggedInUser = req.admin || req.security || req.deptUser;
 
+    if (!loggedInUser) {
+      return res.status(401).json({ message: "Unauthorized access" });
+    }
+
+    const adminId = loggedInUser.createdBy || loggedInUser._id;
+    const admin = await Admin.findById(adminId);
     if (!admin) {
       return res.status(404).json({ message: "Admin not found" });
     }
 
-    const today = moment().startOf("day"); // Normalize to avoid time mismatches
+    const today = moment().startOf("day");
     let isTrial = false;
     let trialExpiryDate = null;
     let trialDaysLeft = 0;
@@ -320,7 +325,6 @@ const getLicenseStatus = async (req, res) => {
     let isExpired = false;
     let alertMessage = null;
 
-    // ✅ USE admin.licenseExpiryDate if available
     if (admin.licenseExpiryDate) {
       licenseExpiryDate = moment(admin.licenseExpiryDate).endOf("day");
       licenseDaysLeft = licenseExpiryDate.diff(today, "days");
@@ -333,7 +337,6 @@ const getLicenseStatus = async (req, res) => {
           "Your license has expired. Please enter a new license key.";
       }
     } else {
-      // No active license → Check trial period
       isTrial = true;
       trialExpiryDate = moment(admin.trialEndDate).endOf("day");
       trialDaysLeft = trialExpiryDate.diff(today, "days");
@@ -436,7 +439,9 @@ const getVisitorRegisterURL = async (req, res) => {
 
     res.json({ visitorRegisterURL: admin.visitorRegisterURL });
   } catch (error) {
-    res.status(500).json({ error: "Internal server error", details: error.message });
+    res
+      .status(500)
+      .json({ error: "Internal server error", details: error.message });
   }
 };
 
@@ -449,5 +454,5 @@ export {
   delAdmin,
   adminCounts,
   getCompanyDetails,
-  getVisitorRegisterURL
+  getVisitorRegisterURL,
 };
